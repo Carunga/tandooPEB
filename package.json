@@ -1,16 +1,31 @@
 {
   "name": "tandooPEB",
   "author": "seb",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "keywords": ["pebble-app"],
   "private": true,
-  "dependencies": {},
+  "dependencies": {
+    "pebble-clay": "^1.0.4"
+  },
   "pebble": {
     "displayName": "tandooPEB",
     "uuid": "b0eb1f54-cbf0-444f-9b9e-77ee01da9cca",
     "sdkVersion": "3",
     "enableMultiJS": true,
     "targetPlatforms": ["emery"],
+    "capabilities": ["configurable"],
+    "messageKeys": [
+      "SYNC_REQUEST",
+      "DONE_COUNT",
+      "DONE_IDS",
+      "SYNC_STATUS",
+      "ITEM_COUNT",
+      "ITEM_INDEX",
+      "ITEM_ID",
+      "ITEM_NAME",
+      "ITEM_AMOUNT",
+      "SYNC_MSG"
+    ],
     "watchapp": {
       "watchface": false
     },
