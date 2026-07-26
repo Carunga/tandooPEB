@@ -154,18 +154,37 @@ static void start_sync(void) {
 static uint16_t menu_get_num_sections(MenuLayer *ml, void *ctx) { return 1; }
 
 static uint16_t menu_get_num_rows(MenuLayer *ml, uint16_t sec, void *ctx) {
-  return s_item_count;
+  return s_item_count + 1;  // +1 for the "Sync now" row
 }
 
 static int16_t menu_get_cell_height(MenuLayer *ml, MenuIndex *idx, void *ctx) {
-  return 40;
+  return (idx->row == s_item_count) ? 32 : 40;
 }
 
 static void menu_draw_row(GContext *ctx, const Layer *cell, MenuIndex *idx, void *d) {
-  if (idx->row >= s_item_count) return;
-  ShoppingItem *item = &s_items[idx->row];
   GRect bounds = layer_get_bounds(cell);
   bool hl = menu_cell_layer_is_highlighted(cell);
+
+  // "Sync now" row at the bottom
+  if (idx->row == s_item_count) {
+    GColor row_color = hl ? GColorWhite : GColorDarkCandyAppleRed;
+    GColor text_color = hl ? GColorWhite : GColorBlack;
+
+    // draw separator line at top
+    graphics_context_set_stroke_color(ctx, hl ? GColorWhite : GColorLightGray);
+    graphics_draw_line(ctx, GPoint(0, 0), GPoint(bounds.size.w, 0));
+
+    graphics_context_set_text_color(ctx, text_color);
+    graphics_draw_text(ctx, s_status_buf,
+                       fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+                       GRect(4, 0, bounds.size.w - 8, bounds.size.h),
+                       GTextOverflowModeTrailingEllipsis,
+                       GTextAlignmentCenter, NULL);
+    return;
+  }
+
+  if (idx->row >= s_item_count) return;
+  ShoppingItem *item = &s_items[idx->row];
 
   GColor text_color = hl ? GColorWhite : (item->checked ? GColorDarkGray : GColorBlack);
   GColor sub_color = hl ? GColorWhite : GColorDarkGray;
@@ -215,6 +234,11 @@ static void menu_draw_row(GContext *ctx, const Layer *cell, MenuIndex *idx, void
 }
 
 static void menu_select_click(MenuLayer *ml, MenuIndex *idx, void *d) {
+  // "Sync now" row
+  if (idx->row == s_item_count) {
+    start_sync();
+    return;
+  }
   if (idx->row >= s_item_count) return;
   ShoppingItem *it = &s_items[idx->row];
   it->checked = !it->checked;
@@ -360,7 +384,7 @@ static void window_unload(Window *window) {
 
 static void init(void) {
   load_items();
-  strncpy(s_status_buf, "Long-press SELECT\nto sync", STATUS_BUF_LEN - 1);
+  strncpy(s_status_buf, "Sync now", STATUS_BUF_LEN - 1);
 
   app_message_register_inbox_received(inbox_received);
   app_message_register_outbox_failed(outbox_failed);
