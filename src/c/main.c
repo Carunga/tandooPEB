@@ -30,6 +30,7 @@ typedef struct {
 typedef enum { SYNC_START = 0, SYNC_ITEM = 1, SYNC_DONE = 2, SYNC_FAIL = 3 } SyncStatus;
 
 static Window *s_window;
+static Layer *s_title_bg_layer;
 static TextLayer *s_title_layer;
 static TextLayer *s_count_layer;
 static TextLayer *s_empty_layer;
@@ -107,6 +108,14 @@ static void load_items(void) {
 }
 
 // --------------------------------------------------------- status / count
+
+#define ACCENT_COLOR GColorFromHEX(0x0156B2)
+
+static void title_bg_update(Layer *layer, GContext *ctx) {
+  GRect bounds = layer_get_bounds(layer);
+  graphics_context_set_fill_color(ctx, ACCENT_COLOR);
+  graphics_fill_rect(ctx, bounds, 0, GCornerNone);
+}
 
 static void set_status(const char *s) {
   snprintf(s_status_buf, sizeof(s_status_buf), "%s", s);
@@ -193,11 +202,11 @@ static void menu_draw_row(GContext *ctx, const Layer *cell, MenuIndex *idx, void
 
   // "Sync now" row at the bottom
   if (idx->row == s_item_count) {
-    GColor text_color = hl ? GColorLightGray : GColorBlack;
-    GColor sub_color = hl ? GColorLightGray : GColorDarkGray;
+    GColor text_color = hl ? GColorWhite : GColorBlack;
+    GColor sub_color = hl ? GColorWhite : GColorDarkGray;
 
     // separator line at top
-    graphics_context_set_stroke_color(ctx, hl ? GColorLightGray : GColorLightGray);
+    graphics_context_set_stroke_color(ctx, hl ? GColorWhite : GColorWhite);
     graphics_draw_line(ctx, GPoint(0, 0), GPoint(bounds.size.w, 0));
 
     // line 1: status text (bold)
@@ -224,16 +233,16 @@ static void menu_draw_row(GContext *ctx, const Layer *cell, MenuIndex *idx, void
   if (idx->row >= s_item_count) return;
   ShoppingItem *item = &s_items[idx->row];
 
-  GColor text_color = hl ? GColorLightGray : (item->checked ? GColorDarkGray : GColorBlack);
-  GColor sub_color = hl ? GColorLightGray : GColorDarkGray;
+  GColor text_color = hl ? GColorWhite : (item->checked ? GColorDarkGray : GColorBlack);
+  GColor sub_color = hl ? GColorWhite : GColorDarkGray;
 
   // checkbox
   GRect box = GRect(5, (bounds.size.h - 14) / 2, 14, 14);
-  graphics_context_set_stroke_color(ctx, hl ? GColorLightGray : GColorBlack);
+  graphics_context_set_stroke_color(ctx, hl ? GColorWhite : GColorBlack);
   graphics_context_set_stroke_width(ctx, 1);
   graphics_draw_rect(ctx, box);
   if (item->checked) {
-    graphics_context_set_stroke_color(ctx, hl ? GColorLightGray : GColorGreen);
+    graphics_context_set_stroke_color(ctx, hl ? GColorWhite : GColorGreen);
     graphics_context_set_stroke_width(ctx, 2);
     graphics_draw_line(ctx, GPoint(box.origin.x + 2, box.origin.y + 7),
                        GPoint(box.origin.x + 5, box.origin.y + 11));
@@ -361,8 +370,12 @@ static void window_load(Window *window) {
   GRect bounds = layer_get_bounds(root);
 
   // title bar
+  s_title_bg_layer = layer_create(GRect(0, 0, bounds.size.w, 26));
+  layer_set_update_proc(s_title_bg_layer, title_bg_update);
+  layer_add_child(root, s_title_bg_layer);
+
   s_title_layer = text_layer_create(GRect(24, 0, bounds.size.w - 24, 26));
-  text_layer_set_background_color(s_title_layer, GColorFromHEX(0x10ACD7));
+  text_layer_set_background_color(s_title_layer, GColorClear);
   text_layer_set_text_color(s_title_layer, GColorWhite);
   text_layer_set_font(s_title_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
   text_layer_set_text(s_title_layer, "tandooPEB");
@@ -391,7 +404,7 @@ static void window_load(Window *window) {
     .select_click      = menu_select_click,
     .select_long_click = menu_select_long_click,
   });
-  menu_layer_set_highlight_colors(s_menu_layer, GColorFromHEX(0x10ACD7), GColorLightGray);
+  menu_layer_set_highlight_colors(s_menu_layer, ACCENT_COLOR, GColorWhite);
   menu_layer_set_click_config_onto_window(s_menu_layer, window);
   layer_add_child(root, menu_layer_get_layer(s_menu_layer));
 
@@ -416,6 +429,7 @@ static void window_unload(Window *window) {
   menu_layer_destroy(s_menu_layer);
   text_layer_destroy(s_count_layer);
   text_layer_destroy(s_title_layer);
+  layer_destroy(s_title_bg_layer);
 }
 
 // --------------------------------------------------------- init / deinit
