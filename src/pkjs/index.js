@@ -20,8 +20,8 @@ function getConfig() {
   // Fallback for emulator testing when no Clay settings are configured
   return {
     provider: 'tandoor',
-    serverUrl: 'https://example.com',
-    apiToken: 'REDACTED'
+    serverUrl: '',
+    apiToken: ''
   };
 }
 

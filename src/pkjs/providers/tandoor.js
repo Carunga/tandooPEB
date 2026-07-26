@@ -31,7 +31,7 @@ function request(method, url, token, body) {
     xhr.ontimeout = function () { reject(new Error('timeout')); };
     xhr.timeout = 15000;
     xhr.open(method, url);
-    xhr.setRequestHeader('Authorization', 'Token ' + token);
+    xhr.setRequestHeader('Authorization', 'Bearer ' + token);
     if (body !== undefined) {
       xhr.setRequestHeader('Content-Type', 'application/json');
       xhr.send(JSON.stringify(body));
@@ -59,6 +59,7 @@ module.exports = {
     function fetchPage(url) {
       return request('GET', url, cfg.apiToken).then(function (data) {
         (data.results || []).forEach(function (e) {
+          if (e.checked) return;  // skip already-done items
           items.push({
             id: e.id,
             name: (e.food && e.food.name) ? e.food.name : '?',
