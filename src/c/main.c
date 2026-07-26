@@ -412,7 +412,9 @@ static void window_unload(Window *window) {
 
 static void init(void) {
   load_items();
-  strncpy(s_status_buf, "Sync now", STATUS_BUF_LEN - 1);
+  if (!s_has_synced) {
+    strncpy(s_status_buf, "Sync now", STATUS_BUF_LEN - 1);
+  }
 
   app_message_register_inbox_received(inbox_received);
   app_message_register_outbox_failed(outbox_failed);
