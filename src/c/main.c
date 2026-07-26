@@ -188,6 +188,7 @@ static int16_t menu_get_cell_height(MenuLayer *ml, MenuIndex *idx, void *ctx) {
 }
 
 static void menu_draw_row(GContext *ctx, const Layer *cell, MenuIndex *idx, void *d) {
+  graphics_context_set_compositing_mode(ctx, GCompOpAssign);
   GRect bounds = layer_get_bounds(cell);
   bool hl = menu_cell_layer_is_highlighted(cell);
 
