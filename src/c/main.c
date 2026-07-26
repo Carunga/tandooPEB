@@ -18,7 +18,6 @@ extern uint32_t MESSAGE_KEY_SYNC_MSG;
 #define STATUS_BUF_LEN 40
 
 #define PERSIST_VERSION 1
-#define PERSIST_KEY 1
 
 typedef struct {
   uint32_t id;
@@ -45,37 +44,63 @@ static char s_status_buf[STATUS_BUF_LEN];
 
 // --------------------------------------------------------- persistence
 
-typedef struct {
-  uint32_t version;
-  int32_t item_count;
-  char status[STATUS_BUF_LEN];
-  ShoppingItem items[MAX_ITEMS];
-} PersistData;
+#define PERSIST_KEY_VERSION    1
+#define PERSIST_KEY_COUNT      2
+#define PERSIST_KEY_HAS_SYNCED 3
+#define PERSIST_KEY_STATUS     4
+#define PERSIST_KEY_IDS_BASE   100
+#define PERSIST_KEY_NAMES_BASE 200
+#define PERSIST_KEY_AMTS_BASE  300
+#define PERSIST_KEY_FLAGS_BASE 400
 
 static void save_items(void) {
-  PersistData pd;
-  memset(&pd, 0, sizeof(pd));
-  pd.version = PERSIST_VERSION;
-  pd.item_count = s_item_count;
-  strncpy(pd.status, s_status_buf, STATUS_BUF_LEN - 1);
+  persist_write_int(PERSIST_KEY_VERSION, PERSIST_VERSION);
+  persist_write_int(PERSIST_KEY_COUNT, s_item_count);
+  persist_write_int(PERSIST_KEY_HAS_SYNCED, s_has_synced ? 1 : 0);
+  persist_write_string(PERSIST_KEY_STATUS, s_status_buf);
+
   for (int i = 0; i < s_item_count; i++) {
-    pd.items[i] = s_items[i];
+    persist_write_data(PERSIST_KEY_IDS_BASE + i, &s_items[i].id, sizeof(uint32_t));
+    persist_write_string(PERSIST_KEY_NAMES_BASE + i, s_items[i].name);
+    persist_write_string(PERSIST_KEY_AMTS_BASE + i, s_items[i].amount);
+    uint8_t flags = (s_items[i].checked ? 1 : 0) | (s_items[i].pending_done ? 2 : 0);
+    persist_write_data(PERSIST_KEY_FLAGS_BASE + i, &flags, 1);
   }
-  persist_write_data(PERSIST_KEY, &pd, sizeof(pd));
 }
 
 static void load_items(void) {
-  PersistData pd;
-  int bytes = persist_read_data(PERSIST_KEY, &pd, sizeof(pd));
-  if (bytes > 0 && pd.version == PERSIST_VERSION) {
-    s_item_count = pd.item_count > MAX_ITEMS ? MAX_ITEMS : pd.item_count;
-    for (int i = 0; i < s_item_count; i++) {
-      s_items[i] = pd.items[i];
-    }
-    strncpy(s_status_buf, pd.status, STATUS_BUF_LEN - 1);
-  } else {
+  if (persist_read_int(PERSIST_KEY_VERSION) != PERSIST_VERSION) {
     s_item_count = 0;
     s_status_buf[0] = '\0';
+    s_has_synced = false;
+    return;
+  }
+
+  s_item_count = persist_read_int(PERSIST_KEY_COUNT);
+  if (s_item_count < 0 || s_item_count > MAX_ITEMS) s_item_count = 0;
+
+  s_has_synced = persist_read_int(PERSIST_KEY_HAS_SYNCED) == 1;
+
+  if (persist_read_string(PERSIST_KEY_STATUS, s_status_buf, STATUS_BUF_LEN) < 0) {
+    s_status_buf[0] = '\0';
+  }
+
+  for (int i = 0; i < s_item_count; i++) {
+    uint32_t id;
+    persist_read_data(PERSIST_KEY_IDS_BASE + i, &id, sizeof(uint32_t));
+    s_items[i].id = id;
+
+    if (persist_read_string(PERSIST_KEY_NAMES_BASE + i, s_items[i].name, NAME_LEN) < 0) {
+      s_items[i].name[0] = '\0';
+    }
+    if (persist_read_string(PERSIST_KEY_AMTS_BASE + i, s_items[i].amount, AMOUNT_LEN) < 0) {
+      s_items[i].amount[0] = '\0';
+    }
+
+    uint8_t flags = 0;
+    persist_read_data(PERSIST_KEY_FLAGS_BASE + i, &flags, 1);
+    s_items[i].checked = (flags & 1) != 0;
+    s_items[i].pending_done = (flags & 2) != 0;
   }
 }
 
