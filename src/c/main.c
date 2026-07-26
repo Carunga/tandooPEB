@@ -34,6 +34,8 @@ static TextLayer *s_title_layer;
 static TextLayer *s_count_layer;
 static TextLayer *s_empty_layer;
 static MenuLayer *s_menu_layer;
+static BitmapLayer *s_logo_layer;
+static GBitmap *s_logo_bitmap;
 
 static ShoppingItem s_items[MAX_ITEMS];
 static int s_item_count = 0;
@@ -359,12 +361,18 @@ static void window_load(Window *window) {
   GRect bounds = layer_get_bounds(root);
 
   // title bar
-  s_title_layer = text_layer_create(GRect(0, 0, bounds.size.w, 26));
-  text_layer_set_background_color(s_title_layer, GColorDarkCandyAppleRed);
+  s_title_layer = text_layer_create(GRect(24, 0, bounds.size.w - 24, 26));
+  text_layer_set_background_color(s_title_layer, GColorFromHEX(0x10ACD7));
   text_layer_set_text_color(s_title_layer, GColorWhite);
   text_layer_set_font(s_title_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
-  text_layer_set_text(s_title_layer, " tandooPEB");
+  text_layer_set_text(s_title_layer, "tandooPEB");
   layer_add_child(root, text_layer_get_layer(s_title_layer));
+
+  s_logo_bitmap = gbitmap_create_with_resource(RESOURCE_ID_LOGO_ICON);
+  s_logo_layer = bitmap_layer_create(GRect(2, 3, 20, 20));
+  bitmap_layer_set_compositing_mode(s_logo_layer, GCompOpSet);
+  bitmap_layer_set_bitmap(s_logo_layer, s_logo_bitmap);
+  layer_add_child(root, bitmap_layer_get_layer(s_logo_layer));
 
   s_count_layer = text_layer_create(GRect(bounds.size.w - 84, 5, 80, 18));
   text_layer_set_background_color(s_count_layer, GColorClear);
@@ -383,7 +391,7 @@ static void window_load(Window *window) {
     .select_click      = menu_select_click,
     .select_long_click = menu_select_long_click,
   });
-  menu_layer_set_highlight_colors(s_menu_layer, GColorDarkCandyAppleRed, GColorWhite);
+  menu_layer_set_highlight_colors(s_menu_layer, GColorFromHEX(0x10ACD7), GColorWhite);
   menu_layer_set_click_config_onto_window(s_menu_layer, window);
   layer_add_child(root, menu_layer_get_layer(s_menu_layer));
 
@@ -402,6 +410,8 @@ static void window_load(Window *window) {
 }
 
 static void window_unload(Window *window) {
+  gbitmap_destroy(s_logo_bitmap);
+  bitmap_layer_destroy(s_logo_layer);
   text_layer_destroy(s_empty_layer);
   menu_layer_destroy(s_menu_layer);
   text_layer_destroy(s_count_layer);
