@@ -33,13 +33,13 @@ typedef enum { SYNC_START = 0, SYNC_ITEM = 1, SYNC_DONE = 2, SYNC_FAIL = 3 } Syn
 static Window *s_window;
 static TextLayer *s_title_layer;
 static TextLayer *s_count_layer;
-static TextLayer *s_updated_layer;
 static TextLayer *s_empty_layer;
 static MenuLayer *s_menu_layer;
 
 static ShoppingItem s_items[MAX_ITEMS];
 static int s_item_count = 0;
 static bool s_syncing = false;
+static bool s_has_synced = false;
 static char s_count_buf[32];
 static char s_status_buf[STATUS_BUF_LEN];
 
@@ -83,14 +83,13 @@ static void load_items(void) {
 
 static void set_status(const char *s) {
   snprintf(s_status_buf, sizeof(s_status_buf), "%s", s);
-  text_layer_set_text(s_updated_layer, s_status_buf);
 }
 
 static void set_status_synced(void) {
   time_t now = time(NULL);
   struct tm *t = localtime(&now);
   strftime(s_status_buf, sizeof(s_status_buf), "Synced %H:%M", t);
-  text_layer_set_text(s_updated_layer, s_status_buf);
+  s_has_synced = true;
 }
 
 static void update_count(void) {
@@ -158,7 +157,7 @@ static uint16_t menu_get_num_rows(MenuLayer *ml, uint16_t sec, void *ctx) {
 }
 
 static int16_t menu_get_cell_height(MenuLayer *ml, MenuIndex *idx, void *ctx) {
-  return (idx->row == s_item_count) ? 32 : 40;
+  return (idx->row == s_item_count) ? 38 : 40;
 }
 
 static void menu_draw_row(GContext *ctx, const Layer *cell, MenuIndex *idx, void *d) {
@@ -167,19 +166,31 @@ static void menu_draw_row(GContext *ctx, const Layer *cell, MenuIndex *idx, void
 
   // "Sync now" row at the bottom
   if (idx->row == s_item_count) {
-    GColor row_color = hl ? GColorWhite : GColorDarkCandyAppleRed;
     GColor text_color = hl ? GColorWhite : GColorBlack;
+    GColor sub_color = hl ? GColorWhite : GColorDarkGray;
 
-    // draw separator line at top
+    // separator line at top
     graphics_context_set_stroke_color(ctx, hl ? GColorWhite : GColorLightGray);
     graphics_draw_line(ctx, GPoint(0, 0), GPoint(bounds.size.w, 0));
 
+    // line 1: status text (bold)
+    int main_h = (s_has_synced && !s_syncing) ? 22 : bounds.size.h;
     graphics_context_set_text_color(ctx, text_color);
     graphics_draw_text(ctx, s_status_buf,
                        fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
-                       GRect(4, 0, bounds.size.w - 8, bounds.size.h),
+                       GRect(4, 0, bounds.size.w - 8, main_h),
                        GTextOverflowModeTrailingEllipsis,
                        GTextAlignmentCenter, NULL);
+
+    // line 2: "Press to refresh" (only when synced and not syncing)
+    if (s_has_synced && !s_syncing) {
+      graphics_context_set_text_color(ctx, sub_color);
+      graphics_draw_text(ctx, "Press to refresh",
+                         fonts_get_system_font(FONT_KEY_GOTHIC_14),
+                         GRect(4, 22, bounds.size.w - 8, 16),
+                         GTextOverflowModeTrailingEllipsis,
+                         GTextAlignmentCenter, NULL);
+    }
     return;
   }
 
@@ -337,15 +348,8 @@ static void window_load(Window *window) {
   text_layer_set_text_alignment(s_count_layer, GTextAlignmentRight);
   layer_add_child(root, text_layer_get_layer(s_count_layer));
 
-  // status line
-  s_updated_layer = text_layer_create(GRect(0, 28, bounds.size.w, 18));
-  text_layer_set_background_color(s_updated_layer, GColorClear);
-  text_layer_set_text_color(s_updated_layer, GColorDarkGray);
-  text_layer_set_font(s_updated_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
-  layer_add_child(root, text_layer_get_layer(s_updated_layer));
-
-  // menu
-  s_menu_layer = menu_layer_create(GRect(0, 48, bounds.size.w, bounds.size.h - 48));
+  // shopping list
+  s_menu_layer = menu_layer_create(GRect(0, 28, bounds.size.w, bounds.size.h - 28));
   menu_layer_set_callbacks(s_menu_layer, NULL, (MenuLayerCallbacks) {
     .get_num_sections  = menu_get_num_sections,
     .get_num_rows      = menu_get_num_rows,
@@ -375,7 +379,6 @@ static void window_load(Window *window) {
 static void window_unload(Window *window) {
   text_layer_destroy(s_empty_layer);
   menu_layer_destroy(s_menu_layer);
-  text_layer_destroy(s_updated_layer);
   text_layer_destroy(s_count_layer);
   text_layer_destroy(s_title_layer);
 }
