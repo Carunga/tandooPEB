@@ -1,0 +1,21 @@
+{
+  "name": "tandooPEB",
+  "author": "seb",
+  "version": "1.0.0",
+  "keywords": ["pebble-app"],
+  "private": true,
+  "dependencies": {},
+  "pebble": {
+    "displayName": "tandooPEB",
+    "uuid": "b0eb1f54-cbf0-444f-9b9e-77ee01da9cca",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": ["emery"],
+    "watchapp": {
+      "watchface": false
+    },
+    "resources": {
+      "media": []
+    }
+  }
+}
