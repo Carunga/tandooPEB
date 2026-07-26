@@ -35,12 +35,14 @@
           "type": "bitmap",
           "name": "MENU_ICON",
           "file": "images/icon.png",
-          "menuIcon": true
+          "menuIcon": true,
+          "memoryFormat": "8Bit"
         },
         {
           "type": "bitmap",
           "name": "LOGO_ICON",
-          "file": "images/logo.png"
+          "file": "images/logo.png",
+          "memoryFormat": "8Bit"
         }
       ]
     }

@@ -188,17 +188,16 @@ static int16_t menu_get_cell_height(MenuLayer *ml, MenuIndex *idx, void *ctx) {
 }
 
 static void menu_draw_row(GContext *ctx, const Layer *cell, MenuIndex *idx, void *d) {
-  graphics_context_set_compositing_mode(ctx, GCompOpAssign);
   GRect bounds = layer_get_bounds(cell);
   bool hl = menu_cell_layer_is_highlighted(cell);
 
   // "Sync now" row at the bottom
   if (idx->row == s_item_count) {
-    GColor text_color = hl ? GColorWhite : GColorBlack;
-    GColor sub_color = hl ? GColorWhite : GColorDarkGray;
+    GColor text_color = hl ? GColorLightGray : GColorBlack;
+    GColor sub_color = hl ? GColorLightGray : GColorDarkGray;
 
     // separator line at top
-    graphics_context_set_stroke_color(ctx, hl ? GColorWhite : GColorLightGray);
+    graphics_context_set_stroke_color(ctx, hl ? GColorLightGray : GColorLightGray);
     graphics_draw_line(ctx, GPoint(0, 0), GPoint(bounds.size.w, 0));
 
     // line 1: status text (bold)
@@ -225,16 +224,16 @@ static void menu_draw_row(GContext *ctx, const Layer *cell, MenuIndex *idx, void
   if (idx->row >= s_item_count) return;
   ShoppingItem *item = &s_items[idx->row];
 
-  GColor text_color = hl ? GColorWhite : (item->checked ? GColorDarkGray : GColorBlack);
-  GColor sub_color = hl ? GColorWhite : GColorDarkGray;
+  GColor text_color = hl ? GColorLightGray : (item->checked ? GColorDarkGray : GColorBlack);
+  GColor sub_color = hl ? GColorLightGray : GColorDarkGray;
 
   // checkbox
   GRect box = GRect(5, (bounds.size.h - 14) / 2, 14, 14);
-  graphics_context_set_stroke_color(ctx, hl ? GColorWhite : GColorBlack);
+  graphics_context_set_stroke_color(ctx, hl ? GColorLightGray : GColorBlack);
   graphics_context_set_stroke_width(ctx, 1);
   graphics_draw_rect(ctx, box);
   if (item->checked) {
-    graphics_context_set_stroke_color(ctx, hl ? GColorWhite : GColorGreen);
+    graphics_context_set_stroke_color(ctx, hl ? GColorLightGray : GColorGreen);
     graphics_context_set_stroke_width(ctx, 2);
     graphics_draw_line(ctx, GPoint(box.origin.x + 2, box.origin.y + 7),
                        GPoint(box.origin.x + 5, box.origin.y + 11));
@@ -392,7 +391,7 @@ static void window_load(Window *window) {
     .select_click      = menu_select_click,
     .select_long_click = menu_select_long_click,
   });
-  menu_layer_set_highlight_colors(s_menu_layer, GColorFromHEX(0x10ACD7), GColorWhite);
+  menu_layer_set_highlight_colors(s_menu_layer, GColorFromHEX(0x10ACD7), GColorLightGray);
   menu_layer_set_click_config_onto_window(s_menu_layer, window);
   layer_add_child(root, menu_layer_get_layer(s_menu_layer));
 
