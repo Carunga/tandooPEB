@@ -22,6 +22,5 @@ var providers = {
 module.exports = {
   get: function (id) {
     return providers[id] || providers.tandoor;
-  },
-  all: providers
+  }
 };

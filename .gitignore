@@ -3,3 +3,4 @@ build/
 *.pyc
 node_modules/
 shot_*.png
+screenshot_emery.png

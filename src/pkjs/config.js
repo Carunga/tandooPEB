@@ -42,7 +42,7 @@ module.exports = [
   {
     type: 'text',
     defaultValue: 'In Tandoor, find your token under Settings / API Token. ' +
-                  'On the watch: SELECT checks an item, long-press SELECT syncs.'
+                  'On the watch: SELECT checks an item, SELECT the top row syncs.'
   },
   {
     type: 'submit',

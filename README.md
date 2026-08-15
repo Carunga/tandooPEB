@@ -18,7 +18,7 @@ Shopping list for your Pebble, synced with [Tandoor Recipes](https://github.com/
    - **Server URL** — your Tandoor instance address (e.g. `https://recipes.example.com`)
    - **API Token** — found in Tandoor under **Settings → API Token**
 4. Press **Save**
-5. On the watch, long-press SELECT to sync your shopping list
+5. On the watch, select the top "Sync now" row to sync your shopping list
 
 ## Usage
 
@@ -26,9 +26,12 @@ Shopping list for your Pebble, synced with [Tandoor Recipes](https://github.com/
 |--------|--------|
 | SELECT on an item | Toggle checked / unchecked |
 | SELECT on "Sync now" | Start a sync |
-| Long-press SELECT | Start a sync (works from any row) |
+| Long-press SELECT | Undo the last toggle |
+| BACK with pending items | Asks to "Sync now" before leaving |
+| BACK / DOWN in "Sync now?" dialog | Exit without syncing |
+| SELECT in "Sync now?" dialog | Sync checked items, then exit |
 
-Checked items are marked done on the server the next time you sync.
+Checked items are marked done on the server the next time you sync. If you leave the app with checked-but-unsynced items, you're prompted to sync first.
 
 ## Adding other providers
 

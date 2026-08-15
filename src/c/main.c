@@ -17,7 +17,8 @@ extern uint32_t MESSAGE_KEY_SYNC_MSG;
 #define AMOUNT_LEN 16
 #define STATUS_BUF_LEN 40
 
-#define PERSIST_VERSION 1
+#define PERSIST_SCHEMA_VERSION 1   // schema version of the persisted format
+#define PERSIST_KEY_VERSION    1   // persist key storing the schema version
 
 typedef struct {
   uint32_t id;
@@ -30,6 +31,12 @@ typedef struct {
 typedef enum { SYNC_START = 0, SYNC_ITEM = 1, SYNC_DONE = 2, SYNC_FAIL = 3 } SyncStatus;
 
 static Window *s_window;
+static Window *s_prompt_window;
+static TextLayer *s_prompt_text_layer;
+static ActionBarLayer *s_prompt_action_bar;
+static GBitmap *s_prompt_sync_bitmap;
+static GBitmap *s_prompt_exit_bitmap;
+static AppTimer *s_exit_safety_timer;
 static Layer *s_title_bg_layer;
 static TextLayer *s_title_layer;
 static TextLayer *s_count_layer;
@@ -42,6 +49,7 @@ static ShoppingItem s_items[MAX_ITEMS];
 static int s_item_count = 0;
 static bool s_syncing = false;
 static bool s_has_synced = false;
+static bool s_exit_after_sync = false;
 static char s_count_buf[32];
 static char s_status_buf[STATUS_BUF_LEN];
 
@@ -57,7 +65,7 @@ static char s_status_buf[STATUS_BUF_LEN];
 #define PERSIST_KEY_FLAGS_BASE 400
 
 static void save_items(void) {
-  persist_write_int(PERSIST_KEY_VERSION, PERSIST_VERSION);
+  persist_write_int(PERSIST_KEY_VERSION, PERSIST_SCHEMA_VERSION);
   persist_write_int(PERSIST_KEY_COUNT, s_item_count);
   persist_write_int(PERSIST_KEY_HAS_SYNCED, s_has_synced ? 1 : 0);
   persist_write_string(PERSIST_KEY_STATUS, s_status_buf);
@@ -72,7 +80,7 @@ static void save_items(void) {
 }
 
 static void load_items(void) {
-  if (persist_read_int(PERSIST_KEY_VERSION) != PERSIST_VERSION) {
+  if (persist_read_int(PERSIST_KEY_VERSION) != PERSIST_SCHEMA_VERSION) {
     s_item_count = 0;
     s_status_buf[0] = '\0';
     s_has_synced = false;
@@ -186,6 +194,104 @@ static void start_sync(void) {
 
 // --------------------------------------------------------- menu layer
 
+static int open_count(void) {
+  int c = 0;
+  for (int i = 0; i < s_item_count; i++) {
+    if (!s_items[i].checked) c++;
+  }
+  return c;
+}
+
+static bool has_pending_done(void) {
+  for (int i = 0; i < s_item_count; i++) {
+    if (s_items[i].pending_done) return true;
+  }
+  return false;
+}
+
+static void move_item(int from, int to) {
+  if (from == to) return;
+  ShoppingItem tmp = s_items[from];
+  if (from < to) {
+    memmove(&s_items[from], &s_items[from + 1], (to - from) * sizeof(ShoppingItem));
+  } else {
+    memmove(&s_items[to + 1], &s_items[to], (from - to) * sizeof(ShoppingItem));
+  }
+  s_items[to] = tmp;
+}
+
+static struct {
+  bool valid;
+  ShoppingItem item;
+  int prev_index;
+} s_undo;
+
+#define SCROLL_GAP 20
+#define SCROLL_STEP 2
+#define SCROLL_PERIOD 40
+static int s_scroll_offset = 0;
+static int s_scroll_row = -1;
+static AppTimer *s_scroll_timer = NULL;
+
+static int text_width(const char *text, GFont font) {
+  if (!text || !text[0]) return 0;
+  GSize s = graphics_text_layout_get_content_size(
+      text, font, GRect(0, 0, 1000, 30),
+      GTextOverflowModeWordWrap, GTextAlignmentLeft);
+  return s.w;
+}
+
+static bool item_overflows(int row) {
+  if (row <= 0 || row - 1 >= s_item_count) return false;
+  ShoppingItem *item = &s_items[row - 1];
+  GRect b = layer_get_bounds(menu_layer_get_layer(s_menu_layer));
+  int amt_w = text_width(item->amount, fonts_get_system_font(FONT_KEY_GOTHIC_18));
+  int amt_x = b.size.w - 4 - amt_w;
+  if (amt_x < 28 + 10) amt_x = 28 + 10;
+  int name_w = text_width(item->name, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+  return name_w > (amt_x - 6) - 28;
+}
+
+static void reset_scroll(void) {
+  if (s_scroll_timer) {
+    app_timer_cancel(s_scroll_timer);
+    s_scroll_timer = NULL;
+  }
+  s_scroll_offset = 0;
+  s_scroll_row = -1;
+}
+
+static void scroll_tick(void *ctx) {
+  s_scroll_timer = NULL;
+  if (!s_menu_layer) return;
+
+  MenuIndex sel = menu_layer_get_selected_index(s_menu_layer);
+  if (!item_overflows(sel.row)) {
+    reset_scroll();
+    return;
+  }
+  ShoppingItem *item = &s_items[sel.row - 1];
+  GFont font = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
+  int name_w = text_width(item->name, font);
+  int total = name_w + SCROLL_GAP;
+
+  s_scroll_offset += SCROLL_STEP;
+  if (s_scroll_offset >= total) s_scroll_offset %= total;
+  s_scroll_row = sel.row;
+  layer_mark_dirty(menu_layer_get_layer(s_menu_layer));
+  s_scroll_timer = app_timer_register(SCROLL_PERIOD, scroll_tick, NULL);
+}
+
+static void start_scroll(int row) {
+  if (s_scroll_row != row) {
+    s_scroll_row = row;
+    s_scroll_offset = 0;
+  }
+  if (!s_scroll_timer) {
+    s_scroll_timer = app_timer_register(SCROLL_PERIOD, scroll_tick, NULL);
+  }
+}
+
 static uint16_t menu_get_num_sections(MenuLayer *ml, void *ctx) { return 1; }
 
 static uint16_t menu_get_num_rows(MenuLayer *ml, uint16_t sec, void *ctx) {
@@ -193,27 +299,23 @@ static uint16_t menu_get_num_rows(MenuLayer *ml, uint16_t sec, void *ctx) {
 }
 
 static int16_t menu_get_cell_height(MenuLayer *ml, MenuIndex *idx, void *ctx) {
-  return (idx->row == s_item_count) ? 38 : 40;
+  return (idx->row == 0) ? 50 : 46;
 }
 
 static void menu_draw_row(GContext *ctx, const Layer *cell, MenuIndex *idx, void *d) {
   GRect bounds = layer_get_bounds(cell);
   bool hl = menu_cell_layer_is_highlighted(cell);
 
-  // "Sync now" row at the bottom
-  if (idx->row == s_item_count) {
+  // "Sync now" row at the top
+  if (idx->row == 0) {
     GColor text_color = hl ? GColorWhite : GColorBlack;
     GColor sub_color = hl ? GColorWhite : GColorDarkGray;
 
-    // separator line at top
-    graphics_context_set_stroke_color(ctx, hl ? GColorWhite : GColorWhite);
-    graphics_draw_line(ctx, GPoint(0, 0), GPoint(bounds.size.w, 0));
-
     // line 1: status text (bold)
-    int main_h = (s_has_synced && !s_syncing) ? 22 : bounds.size.h;
+    int main_h = (s_has_synced && !s_syncing) ? 26 : bounds.size.h;
     graphics_context_set_text_color(ctx, text_color);
     graphics_draw_text(ctx, s_status_buf,
-                       fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+                       fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
                        GRect(4, 0, bounds.size.w - 8, main_h),
                        GTextOverflowModeTrailingEllipsis,
                        GTextAlignmentCenter, NULL);
@@ -222,82 +324,305 @@ static void menu_draw_row(GContext *ctx, const Layer *cell, MenuIndex *idx, void
     if (s_has_synced && !s_syncing) {
       graphics_context_set_text_color(ctx, sub_color);
       graphics_draw_text(ctx, "Press to refresh",
-                         fonts_get_system_font(FONT_KEY_GOTHIC_14),
-                         GRect(4, 22, bounds.size.w - 8, 16),
+                         fonts_get_system_font(FONT_KEY_GOTHIC_18),
+                         GRect(4, 26, bounds.size.w - 8, 22),
                          GTextOverflowModeTrailingEllipsis,
                          GTextAlignmentCenter, NULL);
     }
     return;
   }
 
-  if (idx->row >= s_item_count) return;
-  ShoppingItem *item = &s_items[idx->row];
+  if (idx->row - 1 >= s_item_count) return;
+  ShoppingItem *item = &s_items[idx->row - 1];
 
   GColor text_color = hl ? GColorWhite : (item->checked ? GColorDarkGray : GColorBlack);
   GColor sub_color = hl ? GColorWhite : GColorDarkGray;
 
-  // checkbox
-  GRect box = GRect(5, (bounds.size.h - 14) / 2, 14, 14);
+  const int tx = 28;
+  GFont name_font = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
+  GFont amt_font = fonts_get_system_font(FONT_KEY_GOTHIC_18);
+
+  // amount width + right-aligned x
+  int amt_w = text_width(item->amount, amt_font);
+  int amt_x = bounds.size.w - 4 - amt_w;
+  if (amt_x < tx + 10) amt_x = tx + 10;
+
+  // name window: [tx, right]
+  int right = amt_x - 6;
+  int name_w = text_width(item->name, name_font);
+  int name_box_w = right - tx;
+  if (name_box_w < 10) name_box_w = 10;
+  bool overflow = name_w > name_box_w;
+
+  int y_name = (bounds.size.h - 24) / 2;
+  bool is_marquee = overflow && hl;
+  if (is_marquee) {
+    start_scroll(idx->row);
+    int off = s_scroll_offset;
+    int total = name_w + SCROLL_GAP;
+
+    // copy A: full text width, origin slides left
+    graphics_context_set_text_color(ctx, text_color);
+    graphics_draw_text(ctx, item->name, name_font,
+                       GRect(tx - off, y_name, name_w, 24),
+                       GTextOverflowModeTrailingEllipsis,
+                       GTextAlignmentLeft, NULL);
+
+    // copy B: re-enters from the right for a seamless loop
+    int leftB = tx - off + total;
+    if (leftB < right) {
+      graphics_context_set_text_color(ctx, text_color);
+      graphics_draw_text(ctx, item->name, name_font,
+                         GRect(leftB, y_name, name_w, 24),
+                         GTextOverflowModeTrailingEllipsis,
+                         GTextAlignmentLeft, NULL);
+    }
+
+    // erase the strips outside the name window with the row background
+    GColor bg = hl ? ACCENT_COLOR : GColorWhite;
+    graphics_context_set_fill_color(ctx, bg);
+    graphics_fill_rect(ctx, GRect(0, 0, tx, bounds.size.h), 0, GCornerNone);
+    graphics_fill_rect(ctx, GRect(right, 0, bounds.size.w - right, bounds.size.h), 0, GCornerNone);
+  } else {
+    if (hl) reset_scroll();
+    // static single-line name (clipped to the name box)
+    graphics_context_set_text_color(ctx, text_color);
+    graphics_draw_text(ctx, item->name, name_font,
+                       GRect(tx, y_name, name_box_w, 24),
+                       GTextOverflowModeTrailingEllipsis,
+                       GTextAlignmentLeft, NULL);
+  }
+
+  // separator above the first done item (drawn after erasure)
+  int oc = open_count();
+  if (oc < s_item_count && (idx->row - 1) == oc) {
+    graphics_context_set_stroke_color(ctx, hl ? GColorWhite : GColorLightGray);
+    graphics_context_set_stroke_width(ctx, 1);
+    graphics_draw_line(ctx, GPoint(0, 0), GPoint(bounds.size.w, 0));
+  }
+
+  // checkbox (drawn after erasure)
+  GRect box = GRect(5, (bounds.size.h - 16) / 2, 16, 16);
   graphics_context_set_stroke_color(ctx, hl ? GColorWhite : GColorBlack);
   graphics_context_set_stroke_width(ctx, 1);
   graphics_draw_rect(ctx, box);
   if (item->checked) {
     graphics_context_set_stroke_color(ctx, hl ? GColorWhite : GColorGreen);
     graphics_context_set_stroke_width(ctx, 2);
-    graphics_draw_line(ctx, GPoint(box.origin.x + 2, box.origin.y + 7),
-                       GPoint(box.origin.x + 5, box.origin.y + 11));
-    graphics_draw_line(ctx, GPoint(box.origin.x + 5, box.origin.y + 11),
-                       GPoint(box.origin.x + 12, box.origin.y + 2));
+    graphics_draw_line(ctx, GPoint(box.origin.x + 2, box.origin.y + 8),
+                       GPoint(box.origin.x + 6, box.origin.y + 12));
+    graphics_draw_line(ctx, GPoint(box.origin.x + 6, box.origin.y + 12),
+                       GPoint(box.origin.x + 14, box.origin.y + 2));
   }
 
-  const int tx = 26;
-  const int tw = bounds.size.w - tx - 4;
-
-  // name
-  GRect name_rect = GRect(tx, 0, tw, 22);
-  graphics_context_set_text_color(ctx, text_color);
-  graphics_draw_text(ctx, item->name,
-                     fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
-                     name_rect, GTextOverflowModeTrailingEllipsis,
-                     GTextAlignmentLeft, NULL);
-
-  // strikethrough
+  // strikethrough across the visible name
   if (item->checked) {
-    int sw = (int)strlen(item->name) * 9;
-    if (sw > tw) sw = tw;
-    if (sw < 10) sw = 10;
-    graphics_context_set_stroke_color(ctx, text_color);
-    graphics_context_set_stroke_width(ctx, 1);
-    graphics_draw_line(ctx, GPoint(tx, 11), GPoint(tx + sw, 11));
+    int x1, x2;
+    if (is_marquee) {
+      x1 = tx - s_scroll_offset;
+      if (x1 < tx) x1 = tx;
+      x2 = x1 + name_w;
+      if (x2 > right) x2 = right;
+    } else {
+      x1 = tx;
+      x2 = tx + name_w;
+      if (x2 > right) x2 = right;
+      if (x2 < x1 + 12) x2 = x1 + 12;
+    }
+    if (x2 > x1) {
+      graphics_context_set_stroke_color(ctx, text_color);
+      graphics_context_set_stroke_width(ctx, 1);
+      graphics_draw_line(ctx, GPoint(x1, y_name + 13), GPoint(x2, y_name + 13));
+    }
   }
 
-  // amount
+  // amount, right-aligned on the same line
   graphics_context_set_text_color(ctx, sub_color);
-  graphics_draw_text(ctx, item->amount,
-                     fonts_get_system_font(FONT_KEY_GOTHIC_14),
-                     GRect(tx, 21, tw, 16),
+  graphics_draw_text(ctx, item->amount, amt_font,
+                     GRect(amt_x, (bounds.size.h - 18) / 2, bounds.size.w - 4 - amt_x, 18),
                      GTextOverflowModeTrailingEllipsis,
-                     GTextAlignmentLeft, NULL);
+                     GTextAlignmentRight, NULL);
 }
 
 static void menu_select_click(MenuLayer *ml, MenuIndex *idx, void *d) {
-  // "Sync now" row
-  if (idx->row == s_item_count) {
+  // "Sync now" row at the top
+  if (idx->row == 0) {
     start_sync();
     return;
   }
-  if (idx->row >= s_item_count) return;
-  ShoppingItem *it = &s_items[idx->row];
+  if (idx->row - 1 >= s_item_count) return;
+  int item_index = idx->row - 1;
+  ShoppingItem *it = &s_items[item_index];
+  s_undo.item = *it;
+  s_undo.prev_index = item_index;
+  s_undo.valid = true;
   it->checked = !it->checked;
   it->pending_done = it->checked;
-  layer_mark_dirty(menu_layer_get_layer(ml));
+  move_item(item_index, it->checked ? open_count() : open_count() - 1);
+  reset_scroll();
+  menu_layer_reload_data(s_menu_layer);
   update_count();
   save_items();
   vibes_short_pulse();
 }
 
 static void menu_select_long_click(MenuLayer *ml, MenuIndex *idx, void *d) {
+  if (!s_undo.valid) {
+    set_status("Nothing to undo");
+    menu_layer_reload_data(s_menu_layer);
+    return;
+  }
+
+  int cur = -1;
+  for (int i = 0; i < s_item_count; i++) {
+    if (s_items[i].id == s_undo.item.id) { cur = i; break; }
+  }
+  if (cur < 0) {
+    s_undo.valid = false;
+    return;
+  }
+
+  // remove item from its current slot
+  memmove(&s_items[cur], &s_items[cur + 1], (s_item_count - cur - 1) * sizeof(ShoppingItem));
+
+  // insert the pre-toggle snapshot back at its original index
+  int insert_at = s_undo.prev_index;
+  if (cur < insert_at) insert_at--;
+  if (insert_at > s_item_count - 1) insert_at = s_item_count - 1;
+  if (insert_at < 0) insert_at = 0;
+  memmove(&s_items[insert_at + 1], &s_items[insert_at], (s_item_count - insert_at - 1) * sizeof(ShoppingItem));
+  s_items[insert_at] = s_undo.item;
+
+  s_undo.valid = false;
+  reset_scroll();
+  menu_layer_reload_data(s_menu_layer);
+  update_count();
+  save_items();
+  vibes_short_pulse();
+}
+
+// --------------------------------------------------------- exit prompt
+
+static void exit_now(void) {
+  window_stack_pop_all(true);
+}
+
+static void exit_timer_cb(void *ctx) {
+  s_exit_safety_timer = NULL;
+  exit_now();
+}
+
+// Main window handlers:
+static void sync_then_exit(void) {
+  // Start the sync; if the outbox can't even be used, exit immediately.
   start_sync();
+  if (!s_syncing) {
+    exit_now();
+    return;
+  }
+  s_exit_after_sync = true;
+  // Safety net in case the phone never answers.
+  s_exit_safety_timer = app_timer_register(10000, exit_timer_cb, NULL);
+}
+
+// Prompt window handlers:
+static void prompt_sync_click(ClickRecognizerRef rec, void *ctx) {
+  window_stack_pop(true);            // close the dialog first
+  sync_then_exit();
+}
+
+static void prompt_exit_click(ClickRecognizerRef rec, void *ctx) {
+  exit_now();
+}
+
+static void prompt_click_config_provider(void *ctx) {
+  window_single_click_subscribe(BUTTON_ID_SELECT, prompt_sync_click);
+  window_single_click_subscribe(BUTTON_ID_DOWN, prompt_exit_click);
+  window_single_click_subscribe(BUTTON_ID_BACK, prompt_exit_click);
+}
+
+static void prompt_window_load(Window *window) {
+  Layer *root = window_get_root_layer(window);
+  GRect bounds = layer_get_bounds(root);
+
+  s_prompt_sync_bitmap = gbitmap_create_with_resource(RESOURCE_ID_SYNC_ICON);
+  s_prompt_exit_bitmap = gbitmap_create_with_resource(RESOURCE_ID_EXIT_ICON);
+
+  // message text, left of the action bar
+  const GEdgeInsets label_insets = {.top = 40, .right = ACTION_BAR_WIDTH + 12, .bottom = 40, .left = 12};
+  s_prompt_text_layer = text_layer_create(grect_inset(bounds, label_insets));
+  text_layer_set_text(s_prompt_text_layer, "Checked items\nnot synced.\nSync now?");
+  text_layer_set_background_color(s_prompt_text_layer, GColorClear);
+  text_layer_set_text_color(s_prompt_text_layer, GColorWhite);
+  text_layer_set_text_alignment(s_prompt_text_layer, GTextAlignmentCenter);
+  text_layer_set_overflow_mode(s_prompt_text_layer, GTextOverflowModeWordWrap);
+  text_layer_set_font(s_prompt_text_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+  layer_add_child(root, text_layer_get_layer(s_prompt_text_layer));
+
+  s_prompt_action_bar = action_bar_layer_create();
+  action_bar_layer_set_icon(s_prompt_action_bar, BUTTON_ID_SELECT, s_prompt_sync_bitmap);
+  action_bar_layer_set_icon(s_prompt_action_bar, BUTTON_ID_DOWN, s_prompt_exit_bitmap);
+  action_bar_layer_set_click_config_provider(s_prompt_action_bar, prompt_click_config_provider);
+  action_bar_layer_add_to_window(s_prompt_action_bar, window);
+}
+
+static void prompt_window_unload(Window *window) {
+  if (s_exit_safety_timer) {
+    app_timer_cancel(s_exit_safety_timer);
+    s_exit_safety_timer = NULL;
+  }
+  text_layer_destroy(s_prompt_text_layer);
+  action_bar_layer_destroy(s_prompt_action_bar);
+  gbitmap_destroy(s_prompt_sync_bitmap);
+  gbitmap_destroy(s_prompt_exit_bitmap);
+  window_destroy(s_prompt_window);
+  s_prompt_window = NULL;
+}
+
+static void show_sync_prompt(void) {
+  s_prompt_window = window_create();
+  window_set_background_color(s_prompt_window, ACCENT_COLOR);
+  window_set_window_handlers(s_prompt_window, (WindowHandlers) {
+    .load = prompt_window_load,
+    .unload = prompt_window_unload,
+  });
+  window_stack_push(s_prompt_window, true);
+}
+
+// --------------------------------------------------------- window clicks
+
+static void up_single_click(ClickRecognizerRef rec, void *ctx) {
+  menu_layer_set_selected_next(s_menu_layer, true, MenuRowAlignCenter, true);
+}
+
+static void down_single_click(ClickRecognizerRef rec, void *ctx) {
+  menu_layer_set_selected_next(s_menu_layer, false, MenuRowAlignCenter, true);
+}
+
+static void select_single_click(ClickRecognizerRef rec, void *ctx) {
+  MenuIndex idx = menu_layer_get_selected_index(s_menu_layer);
+  menu_select_click(s_menu_layer, &idx, NULL);
+}
+
+static void select_long_click(ClickRecognizerRef rec, void *ctx) {
+  MenuIndex idx = menu_layer_get_selected_index(s_menu_layer);
+  menu_select_long_click(s_menu_layer, &idx, NULL);
+}
+
+static void back_single_click(ClickRecognizerRef rec, void *ctx) {
+  if (!s_syncing && has_pending_done()) {
+    show_sync_prompt();
+  } else {
+    exit_now();
+  }
+}
+
+static void main_click_config_provider(void *ctx) {
+  window_single_repeating_click_subscribe(BUTTON_ID_UP, 100, (ClickHandler)up_single_click);
+  window_single_repeating_click_subscribe(BUTTON_ID_DOWN, 100, (ClickHandler)down_single_click);
+  window_single_click_subscribe(BUTTON_ID_SELECT, (ClickHandler)select_single_click);
+  window_long_click_subscribe(BUTTON_ID_SELECT, 0, (ClickHandler)select_long_click, NULL);
+  window_single_click_subscribe(BUTTON_ID_BACK, (ClickHandler)back_single_click);
 }
 
 // --------------------------------------------------------- messages
@@ -309,6 +634,8 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
   switch (st->value->uint8) {
     case SYNC_START:
       s_item_count = 0;
+      s_undo.valid = false;
+      reset_scroll();
       menu_layer_reload_data(s_menu_layer);
       update_empty();
       break;
@@ -337,12 +664,17 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
 
     case SYNC_DONE:
       s_syncing = false;
+      s_undo.valid = false;
       set_status_synced();
       update_count();
       update_empty();
       menu_layer_reload_data(s_menu_layer);
       save_items();
       vibes_short_pulse();
+      if (s_exit_after_sync) {
+        s_exit_after_sync = false;
+        exit_now();
+      }
       break;
 
     case SYNC_FAIL: {
@@ -352,6 +684,10 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
       update_empty();
       menu_layer_reload_data(s_menu_layer);
       vibes_double_pulse();
+      if (s_exit_after_sync) {
+        s_exit_after_sync = false;
+        exit_now();
+      }
       break;
     }
   }
@@ -361,6 +697,10 @@ static void outbox_failed(DictionaryIterator *iter, AppMessageResult reason, voi
   s_syncing = false;
   set_status("bt error");
   menu_layer_reload_data(s_menu_layer);
+  if (s_exit_after_sync) {
+    s_exit_after_sync = false;
+    exit_now();
+  }
 }
 
 // --------------------------------------------------------- window
@@ -370,52 +710,50 @@ static void window_load(Window *window) {
   GRect bounds = layer_get_bounds(root);
 
   // title bar
-  s_title_bg_layer = layer_create(GRect(0, 0, bounds.size.w, 26));
+  s_title_bg_layer = layer_create(GRect(0, 0, bounds.size.w, 30));
   layer_set_update_proc(s_title_bg_layer, title_bg_update);
   layer_add_child(root, s_title_bg_layer);
 
-  s_title_layer = text_layer_create(GRect(24, 0, bounds.size.w - 24, 26));
+  s_title_layer = text_layer_create(GRect(24, 0, bounds.size.w - 24, 30));
   text_layer_set_background_color(s_title_layer, GColorClear);
   text_layer_set_text_color(s_title_layer, GColorWhite);
-  text_layer_set_font(s_title_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
+  text_layer_set_font(s_title_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
   text_layer_set_text(s_title_layer, "tandooPEB");
   layer_add_child(root, text_layer_get_layer(s_title_layer));
 
   s_logo_bitmap = gbitmap_create_with_resource(RESOURCE_ID_LOGO_ICON);
-  s_logo_layer = bitmap_layer_create(GRect(2, 3, 20, 20));
+  s_logo_layer = bitmap_layer_create(GRect(2, 4, 22, 22));
   bitmap_layer_set_compositing_mode(s_logo_layer, GCompOpSet);
   bitmap_layer_set_bitmap(s_logo_layer, s_logo_bitmap);
   layer_add_child(root, bitmap_layer_get_layer(s_logo_layer));
 
-  s_count_layer = text_layer_create(GRect(bounds.size.w - 84, 5, 80, 18));
+  s_count_layer = text_layer_create(GRect(bounds.size.w - 100, 6, 96, 18));
   text_layer_set_background_color(s_count_layer, GColorClear);
   text_layer_set_text_color(s_count_layer, GColorWhite);
-  text_layer_set_font(s_count_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
+  text_layer_set_font(s_count_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18));
   text_layer_set_text_alignment(s_count_layer, GTextAlignmentRight);
   layer_add_child(root, text_layer_get_layer(s_count_layer));
 
   // shopping list
-  s_menu_layer = menu_layer_create(GRect(0, 28, bounds.size.w, bounds.size.h - 28));
+  s_menu_layer = menu_layer_create(GRect(0, 32, bounds.size.w, bounds.size.h - 32));
   menu_layer_set_callbacks(s_menu_layer, NULL, (MenuLayerCallbacks) {
     .get_num_sections  = menu_get_num_sections,
     .get_num_rows      = menu_get_num_rows,
     .get_cell_height   = menu_get_cell_height,
     .draw_row          = menu_draw_row,
-    .select_click      = menu_select_click,
-    .select_long_click = menu_select_long_click,
   });
   menu_layer_set_highlight_colors(s_menu_layer, ACCENT_COLOR, GColorWhite);
-  menu_layer_set_click_config_onto_window(s_menu_layer, window);
+  window_set_click_config_provider(s_window, main_click_config_provider);
   layer_add_child(root, menu_layer_get_layer(s_menu_layer));
 
   // empty state
-  s_empty_layer = text_layer_create(GRect(0, 100, bounds.size.w, 60));
+  s_empty_layer = text_layer_create(GRect(0, 108, bounds.size.w, 60));
   text_layer_set_background_color(s_empty_layer, GColorClear);
   text_layer_set_text_color(s_empty_layer, GColorDarkGray);
   text_layer_set_font(s_empty_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18));
   text_layer_set_text_alignment(s_empty_layer, GTextAlignmentCenter);
   text_layer_set_overflow_mode(s_empty_layer, GTextOverflowModeWordWrap);
-  text_layer_set_text(s_empty_layer, "No items.\nLong-press SELECT\nto sync.");
+  text_layer_set_text(s_empty_layer, "No items.\nSELECT the top row\nto sync.");
   layer_add_child(root, text_layer_get_layer(s_empty_layer));
 
   update_count();
@@ -423,6 +761,7 @@ static void window_load(Window *window) {
 }
 
 static void window_unload(Window *window) {
+  reset_scroll();
   gbitmap_destroy(s_logo_bitmap);
   bitmap_layer_destroy(s_logo_layer);
   text_layer_destroy(s_empty_layer);

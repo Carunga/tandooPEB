@@ -17,12 +17,7 @@ function getConfig() {
       return settings;
     }
   } catch (e) {}
-  // Fallback for emulator testing when no Clay settings are configured
-  return {
-    provider: 'tandoor',
-    serverUrl: '',
-    apiToken: ''
-  };
+  return null;
 }
 
 function sendMessage(dict) {
@@ -66,13 +61,12 @@ function runSync(doneIds) {
   s_syncInProgress = true;
 
   var cfg = getConfig();
-  var provider = providers.get(cfg.provider);
-
-  if (!cfg.serverUrl || !cfg.apiToken) {
+  if (!cfg || !cfg.serverUrl || !cfg.apiToken) {
     sendFail('open settings');
     s_syncInProgress = false;
     return;
   }
+  var provider = providers.get(cfg.provider);
 
   console.log('sync start: provider=' + provider.id + ', ' + doneIds.length + ' done ids');
 

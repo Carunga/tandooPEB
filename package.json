@@ -41,6 +41,16 @@
           "type": "bitmap",
           "name": "LOGO_ICON",
           "file": "images/logo.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "SYNC_ICON",
+          "file": "images/sync_icon.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "EXIT_ICON",
+          "file": "images/exit_icon.png"
         }
       ]
     }
