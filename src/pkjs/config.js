@@ -36,6 +36,7 @@ module.exports = [
     label: 'API token',
     defaultValue: '',
     attributes: {
+      type: 'password',
       placeholder: 'Tandoor: Settings > API Token'
     }
   },
