@@ -16,6 +16,8 @@
     "capabilities": ["configurable"],
     "messageKeys": [
       "SYNC_REQUEST",
+      "NEW_COUNT",
+      "NEW_ITEMS",
       "DONE_COUNT",
       "DONE_IDS",
       "SYNC_STATUS",

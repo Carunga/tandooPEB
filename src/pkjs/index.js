@@ -53,7 +53,25 @@ function sendFail(msg) {
 
 var s_syncInProgress = false;
 
-function runSync(doneIds) {
+// NEW_ITEMS: one "c\tname" per line (c = '1' when checked done)
+function parseNewItems(payload) {
+  var items = [];
+  var text = payload.NEW_ITEMS;
+  if (!text || !payload.NEW_COUNT) {
+    return items;
+  }
+  text.split('\n').forEach(function (line) {
+    if (items.length >= payload.NEW_COUNT) return;
+    var tab = line.indexOf('\t');
+    if (tab < 0) return;
+    var name = line.substring(tab + 1).trim();
+    if (!name) return;
+    items.push({ checked: line.charAt(0) === '1', name: name });
+  });
+  return items;
+}
+
+function runSync(doneIds, newItems) {
   if (s_syncInProgress) {
     console.log('sync already in progress, ignoring request');
     return;
@@ -67,10 +85,25 @@ function runSync(doneIds) {
     return;
   }
   var provider = providers.get(cfg.provider);
+  if (newItems.length > 0 && typeof provider.addItem !== 'function') {
+    sendFail('add unsupported');
+    s_syncInProgress = false;
+    return;
+  }
 
-  console.log('sync start: provider=' + provider.id + ', ' + doneIds.length + ' done ids');
+  console.log('sync start: provider=' + provider.id + ', ' + doneIds.length +
+              ' done ids, ' + newItems.length + ' new items');
 
-  provider.markDone(cfg, doneIds)
+  // Create new local items first, already done when checked, so no separate
+  // mark-done round trip is needed for them.
+  var chain = Promise.resolve();
+  newItems.forEach(function (item) {
+    chain = chain.then(function () {
+      return provider.addItem(cfg, item.name, item.checked);
+    });
+  });
+  chain
+    .then(function () { return provider.markDone(cfg, doneIds); })
     .then(function () { return provider.fetchItems(cfg); })
     .then(function (items) {
       console.log('fetched ' + items.length + ' open items');
@@ -99,5 +132,5 @@ Pebble.addEventListener('appmessage', function (e) {
       doneIds.push((raw[i] | (raw[i + 1] << 8) | (raw[i + 2] << 16) | (raw[i + 3] << 24)) >>> 0);
     }
   }
-  runSync(doneIds);
+  runSync(doneIds, parseNewItems(e.payload));
 });

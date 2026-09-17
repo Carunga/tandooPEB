@@ -8,6 +8,8 @@
 //                                resolves with the list of OPEN items
 //        markDone(cfg, ids)   -> Promise<void>
 //                                marks the given entry ids as done at the backend
+//        addItem(cfg, name, checked) -> Promise<void>
+//                                adds a new entry; already done when checked
 //      cfg is the Clay settings object (messageKey -> value).
 //   2. require() and register it in `providers` below.
 //   3. Add it to the provider select options in src/pkjs/config.js.

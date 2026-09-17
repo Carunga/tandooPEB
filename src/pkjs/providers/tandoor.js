@@ -85,5 +85,21 @@ module.exports = {
       ids: ids,
       checked: true
     });
+  },
+
+  // add a new entry by name (e.g. from watch dictation); when checked is
+  // true the entry is created already done in a single request
+  addItem: function (cfg, name, checked) {
+    var base = normalizeUrl(cfg.serverUrl);
+    var body = {
+      amount: 1,
+      food: { name: String(name).trim() },
+      unit: null,
+      checked: !!checked
+    };
+    if (checked) {
+      body.completed_at = new Date().toISOString();
+    }
+    return request('POST', base + '/api/shopping-list-entry/', cfg.apiToken, body);
   }
 };
