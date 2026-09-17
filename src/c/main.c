@@ -748,6 +748,11 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
 
   switch (st->value->uint8) {
     case SYNC_START:
+      // The server list is authoritative from here on; drop stale local flags
+      // so a no-change exit isn't mistaken for unsynced work.
+      for (int i = 0; i < s_item_count; i++) {
+        s_items[i].local = false;
+      }
       s_item_count = 0;
       s_undo.valid = false;
       reset_scroll();
@@ -771,6 +776,7 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
         it->amount[AMOUNT_LEN - 1] = '\0';
         it->checked = false;
         it->pending_done = false;
+        it->local = false;   // server now owns this item
         menu_layer_reload_data(s_menu_layer);
         update_empty();
       }
