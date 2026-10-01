@@ -31,6 +31,8 @@ typedef struct {
   bool checked;
   bool pending_done;
   bool local;          // added on the watch, not yet created on the server
+  int16_t name_w;      // cached measured widths (-1 = unmeasured)
+  int16_t amt_w;
 } ShoppingItem;
 
 typedef enum { SYNC_START = 0, SYNC_ITEM = 1, SYNC_DONE = 2, SYNC_FAIL = 3 } SyncStatus;
@@ -120,6 +122,8 @@ static void load_items(void) {
     s_items[i].checked = (flags & 1) != 0;
     s_items[i].pending_done = (flags & 2) != 0;
     s_items[i].local = (flags & 4) != 0;
+    s_items[i].name_w = -1;
+    s_items[i].amt_w = -1;
   }
 }
 
@@ -282,6 +286,8 @@ static void add_local_item(const char *text) {
   it->checked = false;
   it->pending_done = false;
   it->local = true;
+  it->name_w = -1;
+  it->amt_w = -1;
   s_item_count++;
 
   save_items();
@@ -340,14 +346,26 @@ static int text_width(const char *text, GFont font) {
   return s.w;
 }
 
+// Measure (once) and cache an item's text widths; text layout is expensive so
+// this keeps redraws and the marquee from re-measuring every frame.
+static void measure_item(ShoppingItem *it) {
+  if (it->name_w < 0) {
+    it->name_w = text_width(it->name, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+  }
+  if (it->amt_w < 0) {
+    it->amt_w = text_width(it->amount, fonts_get_system_font(FONT_KEY_GOTHIC_18));
+  }
+}
+
 static bool item_overflows(int row) {
   if (row <= 0 || row - 1 >= s_item_count) return false;
   ShoppingItem *item = &s_items[row - 1];
+  measure_item(item);
   GRect b = layer_get_bounds(menu_layer_get_layer(s_menu_layer));
-  int amt_w = text_width(item->amount, fonts_get_system_font(FONT_KEY_GOTHIC_18));
+  int amt_w = item->amt_w;
   int amt_x = b.size.w - 4 - amt_w;
   if (amt_x < 28 + 10) amt_x = 28 + 10;
-  int name_w = text_width(item->name, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+  int name_w = item->name_w;
   return name_w > (amt_x - 6) - 28;
 }
 
@@ -370,8 +388,8 @@ static void scroll_tick(void *ctx) {
     return;
   }
   ShoppingItem *item = &s_items[sel.row - 1];
-  GFont font = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
-  int name_w = text_width(item->name, font);
+  measure_item(item);
+  int name_w = item->name_w;
   int total = name_w + SCROLL_GAP;
 
   s_scroll_offset += SCROLL_STEP;
@@ -441,14 +459,15 @@ static void menu_draw_row(GContext *ctx, const Layer *cell, MenuIndex *idx, void
   GFont name_font = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
   GFont amt_font = fonts_get_system_font(FONT_KEY_GOTHIC_18);
 
-  // amount width + right-aligned x
-  int amt_w = text_width(item->amount, amt_font);
+  // amount width + right-aligned x (cached; text layout is expensive)
+  measure_item(item);
+  int amt_w = item->amt_w;
   int amt_x = bounds.size.w - 4 - amt_w;
   if (amt_x < tx + 10) amt_x = tx + 10;
 
   // name window: [tx, right]
   int right = amt_x - 6;
-  int name_w = text_width(item->name, name_font);
+  int name_w = item->name_w;
   int name_box_w = right - tx;
   if (name_box_w < 10) name_box_w = 10;
   bool overflow = name_w > name_box_w;
@@ -777,6 +796,8 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
         it->checked = false;
         it->pending_done = false;
         it->local = false;   // server now owns this item
+        it->name_w = -1;
+        it->amt_w = -1;
         menu_layer_reload_data(s_menu_layer);
         update_empty();
       }
