@@ -28,7 +28,13 @@ function sendMessage(dict) {
 
 // Deliver the fresh item list to the watch, one item per message,
 // serialized via promise chaining.
+// Must match the watch's MAX_ITEMS (src/c/main.c)
+var MAX_ITEMS = 64;
+
 function sendItems(items) {
+  if (items.length > MAX_ITEMS) {
+    items = items.slice(0, MAX_ITEMS);
+  }
   var chain = sendMessage({ SYNC_STATUS: STATUS.START, ITEM_COUNT: items.length });
   items.forEach(function (item, i) {
     chain = chain.then(function () {
@@ -94,15 +100,36 @@ function runSync(doneIds, newItems) {
   console.log('sync start: provider=' + provider.id + ', ' + doneIds.length +
               ' done ids, ' + newItems.length + ' new items');
 
-  // Create new local items first, already done when checked, so no separate
-  // mark-done round trip is needed for them.
-  var chain = Promise.resolve();
-  newItems.forEach(function (item) {
-    chain = chain.then(function () {
-      return provider.addItem(cfg, item.name, item.checked);
-    });
-  });
-  chain
+  // Reconcile against existing entries BEFORE adding. addItem() is not
+  // idempotent: if a previous sync created an entry but the connection dropped
+  // before the watch learned about it, a naive retry would duplicate it. By
+  // skipping names that already exist (open or done) a retry is safe.
+  var reconcile = (typeof provider.fetchEntries === 'function')
+      ? provider.fetchEntries(cfg)
+      : Promise.resolve([]);
+
+  reconcile
+    .then(function (entries) {
+      var existing = {};
+      entries.forEach(function (e) {
+        existing[String(e.name).trim().toLowerCase()] = true;
+      });
+      var toAdd = newItems.filter(function (item) {
+        return !existing[String(item.name).trim().toLowerCase()];
+      });
+      console.log('reconcile: ' + entries.length + ' existing, ' +
+                  newItems.length + ' new, ' + toAdd.length + ' to add');
+
+      // Create new local items first, already done when checked, so no
+      // separate mark-done round trip is needed for them.
+      var chain = Promise.resolve();
+      toAdd.forEach(function (item) {
+        chain = chain.then(function () {
+          return provider.addItem(cfg, item.name, item.checked);
+        });
+      });
+      return chain;
+    })
     .then(function () { return provider.markDone(cfg, doneIds); })
     .then(function () { return provider.fetchItems(cfg); })
     .then(function (items) {

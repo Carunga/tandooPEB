@@ -48,31 +48,45 @@ function formatAmount(amount, unitName) {
   return unitName ? s + ' ' + unitName : s + 'x';
 }
 
+// -> Promise<[{id, name, amount, checked}]> (ALL entries, checked included)
+// Used to reconcile before adding, so a retried sync cannot create duplicates.
+function fetchEntries(cfg) {
+  var base = normalizeUrl(cfg.serverUrl);
+  var items = [];
+  function fetchPage(url) {
+    return request('GET', url, cfg.apiToken).then(function (data) {
+      (data.results || []).forEach(function (e) {
+        items.push({
+          id: e.id,
+          name: (e.food && e.food.name) ? e.food.name : '?',
+          amount: formatAmount(e.amount, e.unit && e.unit.name),
+          checked: !!e.checked
+        });
+      });
+      if (data.next) {
+        return fetchPage(data.next);
+      }
+      return items;
+    });
+  }
+  return fetchPage(base + '/api/shopping-list-entry/?page_size=100');
+}
+
 module.exports = {
   id: 'tandoor',
   label: 'Tandoor Recipes',
 
+  fetchEntries: fetchEntries,
+
   // -> Promise<[{id: uint32, name: string, amount: string}]> (open items only)
   fetchItems: function (cfg) {
-    var base = normalizeUrl(cfg.serverUrl);
-    var items = [];
-    function fetchPage(url) {
-      return request('GET', url, cfg.apiToken).then(function (data) {
-        (data.results || []).forEach(function (e) {
-          if (e.checked) return;  // skip already-done items
-          items.push({
-            id: e.id,
-            name: (e.food && e.food.name) ? e.food.name : '?',
-            amount: formatAmount(e.amount, e.unit && e.unit.name)
-          });
+    return fetchEntries(cfg).then(function (entries) {
+      return entries
+        .filter(function (e) { return !e.checked; })
+        .map(function (e) {
+          return { id: e.id, name: e.name, amount: e.amount };
         });
-        if (data.next) {
-          return fetchPage(data.next);
-        }
-        return items;
-      });
-    }
-    return fetchPage(base + '/api/shopping-list-entry/?page_size=100');
+    });
   },
 
   // mark entries done; resolves immediately when there is nothing to do

@@ -4,6 +4,10 @@
 //   1. Create src/pkjs/providers/<name>.js implementing the provider interface:
 //        id:       string  - unique key, used in settings
 //        label:    string  - human readable name
+//        fetchEntries(cfg)    -> Promise<[{id, name, amount, checked}]>
+//                                resolves with ALL entries (checked included);
+//                                used to reconcile before adding so retries
+//                                after a dropped connection cannot duplicate
 //        fetchItems(cfg)      -> Promise<[{id: uint32, name: string, amount: string}]>
 //                                resolves with the list of OPEN items
 //        markDone(cfg, ids)   -> Promise<void>

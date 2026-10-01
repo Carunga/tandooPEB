@@ -45,12 +45,13 @@ This app intentionally implements only the **basic functions** of Tandoor:
 - **No categories**, no recipes, no meal planning, no food/unit management, and no recipe import.
 - New items are added by **name only** (amount defaults to `1`, no unit). Dictation requires a phone with mic support connected.
 - Only **open (unchecked)** items are shown; checking an item marks it done and it disappears after the next sync.
+- New items are **deduplicated by name** on sync, so a retried sync after a dropped connection won't create duplicates — but this also means you can't add two separate entries with the same name.
 - Only the **`emery`** platform (Pebble Time 2 / Round 2) is built.
 - Credentials (server URL + API token) are stored in the phone app's `localStorage` and are sent to your Tandoor server as-is; use HTTPS.
 
 ## Adding other providers
 
-The app uses a provider system on the phone side — the watch UI and messaging protocol are fully provider-agnostic. Adding support for another shopping list backend might be relatively easy.
+The app uses a provider system on the phone side — the watch UI and messaging protocol are fully provider-agnostic. Adding support for another shopping list backend might be relatively easy: implement `fetchEntries` (all entries, used to deduplicate), `fetchItems` (open items), `markDone`, and `addItem`, then register it in `src/pkjs/providers/index.js` and add it to the settings dropdown.
 
 ## License
 
